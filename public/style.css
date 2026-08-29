@@ -156,3 +156,35 @@ tr:hover td{background:rgba(255,255,255,.02);}
 .emp-detail.show{transform:translateX(0);}
 .emp-detail-head{position:sticky; top:0; background:var(--bg-2); z-index:2; padding:16px 20px; border-bottom:1px solid var(--border-soft); display:flex; justify-content:space-between; align-items:flex-start;}
 .emp-detail-body{padding:18px 20px;}
+
+/* ---------- Bonus suggestion pills ---------- */
+.pill-bonus{display:inline-flex; align-items:center; gap:5px; padding:3px 10px; border-radius:999px; font-size:10.5px; font-weight:800; white-space:nowrap;}
+.bonus-excellent{background:var(--green-soft); color:#7FEBAA;}
+.bonus-good{background:var(--teal-soft); color:#7FF0DE;}
+.bonus-ok{background:var(--amber-soft); color:#FFCE85;}
+.bonus-warn{background:rgba(245,184,78,.22); color:#FFB870;}
+.bonus-danger{background:var(--red-soft); color:#FFB3BA;}
+
+/* ---------- Position / checklist editor ---------- */
+.pos-editor-grid{display:grid; grid-template-columns:280px 1fr; gap:16px; align-items:flex-start;}
+@media (max-width:900px){ .pos-editor-grid{grid-template-columns:1fr;} }
+.pos-list{max-height:70vh; overflow-y:auto;}
+.pos-list-item{padding:11px 14px; border-bottom:1px solid var(--border-soft); cursor:pointer; font-size:13px;}
+.pos-list-item:hover{background:var(--panel-2);}
+.pos-list-item.active{background:var(--primary-soft); border-left:3px solid var(--primary);}
+.pos-list-item .plabel{font-weight:700;}
+.pos-list-item .pmeta{font-size:10.5px; color:var(--muted); margin-top:2px;}
+.pos-list-tier{padding:10px 14px 4px; font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted-2); font-weight:800;}
+
+.item-row{display:grid; grid-template-columns:1fr 120px 40px; gap:8px; align-items:center; margin-bottom:8px;}
+.item-row input[type=text]{width:100%;}
+.item-row select{width:100%;}
+.item-row .rm-item{background:var(--red-soft); border:1px solid rgba(245,99,111,.35); color:#FFB3BA; width:36px; height:36px; border-radius:9px; cursor:pointer; font-size:15px;}
+.add-item-row{margin-top:6px;}
+
+/* ---------- Simple SVG bar chart ---------- */
+.bar-chart-wrap{display:flex; align-items:flex-end; gap:8px; height:200px; padding:16px 8px 4px; overflow-x:auto;}
+.bar-chart-col{display:flex; flex-direction:column; align-items:center; gap:6px; min-width:38px;}
+.bar-chart-bar{width:24px; border-radius:5px 5px 0 0; min-height:2px; transition:height .2s ease;}
+.bar-chart-val{font-size:10px; color:var(--ink); font-weight:700;}
+.bar-chart-label{font-size:9.5px; color:var(--muted); white-space:nowrap;}

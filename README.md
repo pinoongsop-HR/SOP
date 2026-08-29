@@ -2,15 +2,49 @@
 
 Phần mềm nội bộ: **Checklist SOP theo 3 giai đoạn (Mở ca – Giao ca – Đóng ca)** +
 **Đánh giá năng lực &amp; KPI**, tài khoản riêng cho từng nhân sự (Mã NV + PIN),
-phân quyền theo sơ đồ tổ chức, bảng KPI tháng/quý/năm.
+phân quyền theo sơ đồ tổ chức, bảng KPI tháng/quý/năm kèm biểu đồ tiến bộ.
 
-**Bản này khác gì bản trước:** dữ liệu chuyển từ file `data/db.json` sang
-**Postgres miễn phí (Neon)** — lý do và chi tiết ở mục 0 ngay dưới đây. Toàn bộ
-tính năng, giao diện, logic tính KPI giữ nguyên y hệt, đã kiểm thử lại từ đầu.
+**Bản này có gì mới so với bản trước:**
+- Sửa lỗi deploy fail trên Render (xem mục 0 ngay dưới).
+- Thêm vai trò **Quản Lý Vùng** (quyền tương đương Admin, không xoá/sửa được Admin).
+- **Admin / Quản Lý Vùng sửa được checklist** ngay trên giao diện (trang "Quản lý
+  Checklist") — không cần sửa code, không cần deploy lại.
+- **Tick checklist không còn giật/chớp màn hình** — mỗi lần tick chỉ cập nhật đúng
+  dòng đó + vài con số, không tải lại cả trang.
+- Xem chi tiết 1 nhân sự → **tick trực tiếp checklist của người đó** (Admin, Quản
+  Lý Vùng, hoặc quản lý trực tiếp).
+- Trang "Đội Nhóm Của Tôi" hiện thêm cột **Đề xuất thưởng** (chỉ Admin/Quản Lý
+  Vùng thấy) — không cần bấm vào từng người để xem.
+- Trang "Bảng KPI Tổng Hợp" có thêm **biểu đồ cột xu hướng KPI theo tháng** cho
+  từng người, để nắm tiến bộ qua thời gian.
 
 ---
 
-## 0. Vì sao phải đổi sang Postgres (đọc trước khi làm)
+## 0. Sửa lỗi deploy fail (ENOENT package.json)
+
+Tôi đã tải trực tiếp repo GitHub của anh xuống kiểm tra — **cấu trúc file hoàn
+toàn đúng**, `package.json` nằm đúng ở gốc repo giống hệt bản tôi gửi. Vì vậy lỗi
+
+```
+npm error path /opt/render/project/src/package.json
+npm error enoent Could not read package.json
+```
+
+gần như chắc chắn do cấu hình Service trên Render, không phải do thiếu file.
+Vào Render → service của anh → **Settings** → mục **Build & Deploy**, kiểm tra
+đúng 2 chỗ sau rồi bấm **Manual Deploy → Clear build cache & deploy**:
+
+1. **Root Directory** — để **TRỐNG HOÀN TOÀN** (không gõ `khapkhun-hrms`, không
+   gõ `src`, không gõ gì cả). Nếu ô này có sẵn chữ gì đó, xoá đi và lưu lại. Đây
+   là nguyên nhân phổ biến nhất gây đúng lỗi này.
+2. **Build Command** phải là `npm install`, **Start Command** phải là `node server.js`.
+
+Sau khi sửa xong bản mới trong file zip này (đã thêm Quản Lý Vùng + sửa checklist
+được qua UI), làm theo mục 3–4 bên dưới để đẩy code mới lên và deploy lại.
+
+---
+
+## 1. Vì sao dùng Postgres (Neon) thay vì file JSON — nhắc lại nhanh
 
 Bản đầu tôi gửi anh dùng 1 file `data/db.json` làm database — chạy rất tốt
 trên VPS riêng (đĩa thật, dữ liệu không tự mất). Nhưng anh muốn **miễn phí
@@ -42,7 +76,7 @@ service "thức dậy". Đây là giới hạn của **compute** (Render), khôn
 
 ---
 
-## 1. Chuẩn bị tài khoản (đều miễn phí, không cần thẻ)
+## 2. Chuẩn bị tài khoản (đều miễn phí, không cần thẻ)
 
 1. **GitHub** — nếu anh chưa có repo riêng cho app này thì tạo mới tại
    [github.com/new](https://github.com/new), đặt tên ví dụ `khapkhun-hrms`,
@@ -54,7 +88,7 @@ service "thức dậy". Đây là giới hạn của **compute** (Render), khôn
 
 ---
 
-## 2. Lấy connection string từ Neon
+## 3. Lấy connection string từ Neon
 
 1. Vào project vừa tạo trên Neon → trang **Dashboard** → mục **Connection
    string** (thường hiện sẵn ngay khi vừa tạo project).
@@ -62,31 +96,52 @@ service "thức dậy". Đây là giới hạn của **compute** (Render), khôn
    ```
    postgresql://neondb_owner:AbCdEf123456@ep-cool-name-12345.ap-southeast-1.aws.neon.tech/neondb?sslmode=require
    ```
-3. Lưu chuỗi này lại — đây chính là giá trị `DATABASE_URL` sẽ dùng ở bước 4.
+3. Lưu chuỗi này lại — đây chính là giá trị `DATABASE_URL` sẽ dùng ở mục 5.
    Neon tự bật SSL và tự quản lý mọi thứ, không cần cấu hình gì thêm.
 
 ---
 
-## 3. Đẩy code lên GitHub
+## 4. Cập nhật code mới lên GitHub
 
-Trên máy anh (hoặc mở Terminal trong VS Code):
+Anh đã có repo `pinoongsop-HR/SOP` rồi, chỉ cần **thay toàn bộ nội dung** bằng
+các file trong zip này rồi đẩy lại (giữ nguyên Root Directory để trống — xem
+mục 0):
 
 ```bash
-cd khapkhun-hrms          # vào đúng thư mục chứa code (đã có sẵn server.js, routes/, ...)
+# 1. Xoá sạch nội dung cũ trong thư mục repo (giữ lại .git), copy toàn bộ
+#    file trong zip này đè vào đúng thư mục gốc repo — package.json phải nằm
+#    NGAY TẠI GỐC, không nằm trong 1 thư mục con nào khác.
+cd SOP                     # thư mục đã git clone repo pinoongsop-HR/SOP về
+git add .
+git commit -m "Them Quan Ly Vung, sua checklist qua UI, fix chop man hinh, bieu do KPI"
+git push
+```
+
+Nếu đây là lần đầu đẩy code (chưa từng `git clone`), làm theo cách sau thay vì
+`git add .` ở trên:
+
+```bash
+cd khapkhun-hrms          # thư mục chứa code đã giải nén từ file zip
 git init
 git add .
 git commit -m "Khoi tao he thong SOP-KPI"
 git branch -M main
-git remote add origin https://github.com/<ten-tai-khoan>/khapkhun-hrms.git
-git push -u origin main
+git remote add origin https://github.com/pinoongsop-HR/SOP.git
+git push -u origin main --force
 ```
 
 File `.gitignore` đã loại `node_modules/`, `.env`, `data/db.json` ra khỏi
-Git — **không đẩy nhầm mật khẩu/connection string lên GitHub**.
+Git — **không đẩy nhầm mật khẩu/connection string lên GitHub**. Render sẽ tự
+động deploy lại ngay khi thấy commit mới (nếu anh đã bật Auto-Deploy — mặc
+định là bật).
 
 ---
 
-## 4. Tạo Web Service miễn phí trên Render
+## 5. Tạo Web Service miễn phí trên Render (nếu chưa tạo lần nào)
+
+Bỏ qua mục này nếu anh **đã có sẵn** Web Service trên Render trỏ vào repo này —
+chỉ cần đảm bảo biến môi trường `DATABASE_URL` đã được set đúng (bước 4 bên
+dưới), Root Directory để trống (mục 0), rồi deploy lại là xong.
 
 1. Vào [dashboard.render.com](https://dashboard.render.com) → **New +** →
    **Web Service**.
@@ -129,7 +184,7 @@ free tier), mỗi lần deploy lại/redeploy không mất dữ liệu vì đã 
 
 ---
 
-## 5. Chia sẻ cho từng nhân sự
+## 6. Chia sẻ cho từng nhân sự
 
 1. Vào **Quản lý nhân sự** (chỉ Admin/Quản lý thấy mục này) → **+ Thêm nhân
    sự**: nhập tên, chọn Vị trí (hệ thống tự gán checklist 3 giai đoạn), chi
@@ -142,39 +197,59 @@ free tier), mỗi lần deploy lại/redeploy không mất dữ liệu vì đã 
 
 ---
 
-## 6. Cách dùng hằng ngày
+## 7. Cách dùng hằng ngày
 
 ### Nhân viên
 - Đăng nhập → **Checklist của tôi** → chọn tab Mở ca / Giao ca / Đóng ca →
-  tick từng việc khi làm xong.
+  tick từng việc khi làm xong. Tick phát huy hiệu quả **ngay lập tức, không
+  giật màn hình** — cứ tick liên tục từ trên xuống dưới thoải mái.
 - Cuối ca bấm **"Chốt ngày — lưu vào lịch sử KPI"** để điểm hôm nay được ghi
   vào lịch sử (không chốt cũng không sao, quản lý chốt hộ được).
 
-### Quản lý (Bếp Trưởng, Giám Sát Sảnh, Quản Lý Ca, Quản Lý Cửa Hàng)
+### Quản lý (Bếp Trưởng, Giám Sát Sảnh, Quản Lý Ca)
 - **Đội nhóm của tôi**: thấy % Mở ca / Giao ca / Đóng ca + KPI hôm nay của
   đúng nhân sự cấp dưới, cùng chi nhánh (tự lọc theo sơ đồ tổ chức).
-- Bấm **Xem chi tiết** 1 nhân sự → chấm **điểm năng lực (1–5)**, ghi
-  **đánh giá định kỳ** (nhận xét + chốt KPI vào lịch sử đánh giá).
+- Bấm **Xem chi tiết** 1 nhân sự → có thể **tick trực tiếp checklist thay họ**
+  nếu cần, chấm **điểm năng lực (1–5)**, ghi **đánh giá định kỳ**.
 - **Bảng KPI tổng hợp**: chọn Tháng/Quý/Năm → xem KPI trung bình + % ngày đạt
-  chuẩn (≥80) của từng người — dùng xét thưởng minh bạch, có nút **Xuất CSV**.
+  chuẩn (≥80) của từng người, kèm **biểu đồ cột xu hướng theo tháng** để thấy
+  ai đang tiến bộ / đang đi xuống — dùng xét thưởng minh bạch. Có nút **Xuất CSV**.
 
-### Admin (Quản Lý Cửa Hàng / chủ)
-- Thấy **toàn bộ** nhân sự mọi chi nhánh.
-- Duy nhất người có quyền: thêm/sửa/xoá nhân sự, đặt lại PIN khi ai đó quên.
+### Admin &amp; Quản Lý Vùng (quyền tối thượng)
+- **Admin** là quyền cao nhất: thấy toàn bộ nhân sự mọi chi nhánh, thêm/sửa/xoá
+  bất kỳ ai (kể cả Admin khác), là người duy nhất **cấp quyền Admin hoặc Quản
+  Lý Vùng** cho người khác (tick vào ô tương ứng khi thêm/sửa nhân sự).
+- **Quản Lý Vùng** có quyền hạn *gần như tương đương* Admin — thấy toàn bộ
+  nhân sự mọi chi nhánh, thêm/sửa/xoá nhân viên thường, sửa checklist — nhưng
+  **không thể sửa hoặc xoá tài khoản Admin**, và **không thể tự cấp quyền
+  Admin/Quản Lý Vùng** cho ai (chỉ Admin gốc làm được việc này).
+- Cả hai đều thấy thêm cột **"Đề xuất thưởng"** ngay trong bảng **Đội Nhóm Của
+  Tôi** (Xuất sắc/Tốt/Khá/Yếu, kèm lý do khi rê chuột) — không cần bấm vào
+  từng người mới thấy, tiện xét duyệt thưởng nhanh cho cả đội.
+- Trang **"Quản lý Checklist"**: chọn 1 vị trí bên trái → sửa nội dung công
+  việc, đổi trọng số (Trọng yếu/Quan trọng/Thường quy), thêm hoặc xoá đầu việc
+  cho từng giai đoạn (Mở ca/Giao ca/Đóng ca) → bấm **Lưu thay đổi** → áp dụng
+  ngay lập tức cho mọi nhân sự đang giữ vị trí đó, không cần sửa code hay
+  deploy lại. Đây là cách chỉnh checklist cho phù hợp cách vận hành riêng của
+  từng cửa hàng.
 
 ---
 
-## 7. Sửa checklist / thêm vị trí mới
+## 8. Sửa checklist theo 2 cách
 
-Toàn bộ checklist SOP nằm trong **1 file duy nhất**: `config/positions.js`.
-Mỗi vị trí có đúng 3 khối `moCa` / `giaoCa` / `dongCa`. Sửa `label` để đổi nội
-dung 1 việc; copy 1 dòng `{ id, label, weight: 1|2|3 }` để thêm việc mới (nhớ
-đổi `id` không trùng). Sửa xong, `git push` — Render tự deploy lại (dữ liệu
-không mất vì đã ở Neon).
+**Cách 1 — Qua giao diện (khuyến nghị, dùng hằng ngày):** Admin hoặc Quản Lý
+Vùng vào trang **"Quản lý Checklist"**, chọn vị trí, sửa/thêm/xoá việc, bấm
+Lưu — áp dụng ngay lập tức, không cần đụng code, không cần deploy lại.
+
+**Cách 2 — Qua code (chỉ cần khi muốn đổi bộ mặc định lúc khởi tạo project
+mới):** Toàn bộ checklist "gốc" nằm trong `config/positions.default.js`. File
+này **CHỈ được đọc đúng 1 lần** — lúc Postgres còn hoàn toàn trống (project
+mới tinh). Sau đó mọi thay đổi phải làm qua Cách 1, vì dữ liệu thật đã nằm ở
+Postgres chứ không đọc lại file này nữa.
 
 ---
 
-## 8. Sao lưu dữ liệu
+## 9. Sao lưu dữ liệu
 
 Dữ liệu nằm ở Neon — Neon có sẵn cơ chế backup/point-in-time recovery ở mức
 hạ tầng. Muốn tự tải 1 bản về máy định kỳ (khuyến nghị, để yên tâm tuyệt
@@ -188,7 +263,7 @@ chạy trên máy có cài PostgreSQL client (hoặc cho Claude Code chạy hộ
 
 ---
 
-## 9. Giới hạn hiện tại (nên biết trước)
+## 10. Giới hạn hiện tại (nên biết trước)
 
 - **Free tier Render tự ngủ sau 15 phút không ai dùng** → lần vào đầu tiên
   trong ngày có thể chờ 30–50 giây "đánh thức" service. Nếu cần app luôn
@@ -201,4 +276,9 @@ chạy trên máy có cài PostgreSQL client (hoặc cho Claude Code chạy hộ
   **Sửa** → nhập PIN mới ở ô "Mã PIN" để đặt lại hộ.
 - **Phân quyền theo chi nhánh** dựa trên trường "Chi nhánh" nhập lúc tạo
   nhân sự — luôn gõ đúng, nhất quán ("Khạp Khun" / "Pinoong").
+- **"Đề xuất thưởng" chỉ mang tính gợi ý** dựa trên mức KPI, không tự động
+  chi tiền hay tính ra số tiền cụ thể — Admin/Quản Lý Vùng vẫn là người quyết
+  định cuối cùng.
+- Không thể xoá **Admin cuối cùng** của hệ thống (để tránh mất quyền truy cập
+  vĩnh viễn) — luôn phải còn ít nhất 1 Admin.
 - Chưa có sơ đồ tổ chức dạng hình vẽ trực quan — hiện hiển thị dạng bảng.

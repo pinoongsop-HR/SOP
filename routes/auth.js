@@ -3,7 +3,7 @@ const router = express.Router();
 const { getData } = require('../lib/db');
 const { verifyPin, signToken } = require('../lib/auth');
 const { requireAuth } = require('../middleware/authMiddleware');
-const { POSITIONS } = require('../config/positions');
+const { getPositions } = require('../lib/positionsStore');
 
 router.post('/login', (req, res) => {
   const { employeeCode, pin } = req.body || {};
@@ -14,24 +14,24 @@ router.post('/login', (req, res) => {
   if (emp.status === 'Nghỉ việc') return res.status(401).json({ error: 'Tài khoản đã nghỉ việc, không thể đăng nhập' });
   if (!verifyPin(pin, emp.pinHash)) return res.status(401).json({ error: 'Mã PIN không đúng' });
   const token = signToken(emp);
-  const pos = POSITIONS[emp.position];
+  const pos = getPositions()[emp.position];
   res.json({
     token,
     employee: {
       id: emp.id, name: emp.name, employeeCode: emp.employeeCode, position: emp.position,
       positionLabel: pos ? pos.label : emp.position, tier: pos ? pos.tier : null,
-      isAdmin: !!emp.isAdmin, isManager: !!(pos && pos.hasLeadership), branch: emp.branch,
+      isAdmin: !!emp.isAdmin, isRegionalManager: !!emp.isRegionalManager, isManager: !!(pos && pos.hasLeadership), branch: emp.branch,
     },
   });
 });
 
 router.get('/me', requireAuth, (req, res) => {
   const emp = req.employee;
-  const pos = POSITIONS[emp.position];
+  const pos = getPositions()[emp.position];
   res.json({
     id: emp.id, name: emp.name, employeeCode: emp.employeeCode, position: emp.position,
     positionLabel: pos ? pos.label : emp.position, tier: pos ? pos.tier : null,
-    isAdmin: !!emp.isAdmin, isManager: !!(pos && pos.hasLeadership), branch: emp.branch,
+    isAdmin: !!emp.isAdmin, isRegionalManager: !!emp.isRegionalManager, isManager: !!(pos && pos.hasLeadership), branch: emp.branch,
   });
 });
 

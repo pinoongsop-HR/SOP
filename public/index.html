@@ -46,6 +46,7 @@
     <section id="view-team" class="view"></section>
     <section id="view-kpi" class="view"></section>
     <section id="view-staff" class="view"></section>
+    <section id="view-positions" class="view"></section>
   </main>
 </div>
 
@@ -83,10 +84,14 @@
         <div class="form-row"><label class="flabel">Ngày vào làm</label><input type="date" id="f_start"></div>
         <div class="form-row"><label class="flabel">Trạng thái</label><select id="f_status" style="width:100%;"><option>Đang làm</option><option>Thử việc</option><option>Nghỉ việc</option></select></div>
       </div>
-      <div class="form-row">
-        <label style="display:flex; align-items:center; gap:8px; font-size:13px; font-weight:600; cursor:pointer;">
-          <input type="checkbox" id="f_isAdmin" style="width:16px;height:16px;"> Cấp quyền Admin (thấy &amp; sửa toàn bộ hệ thống)
+      <div class="form-row" id="privilegeRow">
+        <label style="display:flex; align-items:center; gap:8px; font-size:13px; font-weight:600; cursor:pointer; margin-bottom:8px;">
+          <input type="checkbox" id="f_isAdmin" style="width:16px;height:16px;"> Cấp quyền Admin (quyền tối thượng, thấy &amp; sửa toàn bộ hệ thống)
         </label>
+        <label style="display:flex; align-items:center; gap:8px; font-size:13px; font-weight:600; cursor:pointer;">
+          <input type="checkbox" id="f_isRegionalManager" style="width:16px;height:16px;"> Cấp quyền Quản Lý Vùng (tương đương Admin, không xoá được Admin)
+        </label>
+        <div class="review-hint" style="margin-top:6px;">Chỉ Admin mới cấp được 2 quyền này.</div>
       </div>
     </div>
     <div class="modal-foot">

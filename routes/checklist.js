@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getData, save } = require('../lib/db');
 const { requireAuth, visibleEmployeeIds } = require('../middleware/authMiddleware');
-const { POSITIONS } = require('../config/positions');
+const { getPositions } = require('../lib/positionsStore');
 const { getOrCreateTodayChecklist, computeEmployeeToday, closeDayForEmployee, classify } = require('../lib/kpi');
 
 function canAccess(req, employeeId) {
@@ -15,7 +15,7 @@ router.get('/:employeeId', requireAuth, (req, res) => {
   const db = getData();
   const emp = db.employees.find((e) => e.id === req.params.employeeId);
   if (!emp) return res.status(404).json({ error: 'Không tìm thấy' });
-  const pos = POSITIONS[emp.position];
+  const pos = getPositions()[emp.position];
   if (!pos) return res.status(400).json({ error: 'Vị trí không hợp lệ' });
   const checklist = getOrCreateTodayChecklist(emp.id);
   const c = computeEmployeeToday(emp);
@@ -40,7 +40,7 @@ router.patch('/:employeeId/item', requireAuth, (req, res) => {
   const db = getData();
   const emp = db.employees.find((e) => e.id === req.params.employeeId);
   if (!emp) return res.status(404).json({ error: 'Không tìm thấy' });
-  const pos = POSITIONS[emp.position];
+  const pos = getPositions()[emp.position];
   const validItem = (pos.phases[phase] || []).some((it) => it.id === itemId);
   if (!validItem) return res.status(400).json({ error: 'Việc không hợp lệ cho vị trí này' });
   const checklist = getOrCreateTodayChecklist(emp.id);

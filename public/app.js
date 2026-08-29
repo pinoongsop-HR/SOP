@@ -3,12 +3,13 @@
    ========================================================================= */
 let TOKEN = localStorage.getItem('kk_token') || null;
 let ME = null;
-let CONFIG = null; // { tiers, positions, phaseLabels }
+let CONFIG = null; // { tiers, positions, phaseLabels } — tổng quan (đọc từ /employees/config/positions)
 let currentView = 'checklist';
 let currentChecklistEmployeeId = null; // ai đang được xem trong "Checklist của tôi" (thường là ME.id)
-let currentChecklistTab = 'moCa';
 
 const PHASE_ORDER = ['moCa', 'giaoCa', 'dongCa'];
+
+function isPrivileged(me) { return !!(me && (me.isAdmin || me.isRegionalManager)); }
 
 /* ============================================================================
    API HELPER
@@ -46,6 +47,9 @@ function classCls(label) {
   if (label === 'Khá') return 'pill-t';
   if (label === 'Trung bình') return 'pill-tb';
   return 'pill-k';
+}
+function bonusCls(tone) {
+  return { excellent: 'bonus-excellent', good: 'bonus-good', ok: 'bonus-ok', warn: 'bonus-warn', danger: 'bonus-danger' }[tone] || 'bonus-warn';
 }
 function openModal(id) { document.getElementById(id).classList.add('show'); }
 function closeModal(id) { document.getElementById(id).classList.remove('show'); }
@@ -100,7 +104,7 @@ async function boot() {
   document.getElementById('loginView').classList.add('hidden');
   document.getElementById('appShell').classList.remove('hidden');
   document.getElementById('sidebarName').textContent = ME.name;
-  document.getElementById('sidebarRole').textContent = ME.isAdmin ? 'Admin · ' + ME.positionLabel : ME.positionLabel;
+  document.getElementById('sidebarRole').textContent = ME.isAdmin ? 'Admin · ' + ME.positionLabel : ME.isRegionalManager ? 'Quản Lý Vùng · ' + ME.positionLabel : ME.positionLabel;
   buildNav();
   currentChecklistEmployeeId = ME.id;
   switchView('checklist');
@@ -114,9 +118,10 @@ boot();
 function buildNav() {
   const nav = document.getElementById('navButtons');
   const items = [{ key: 'checklist', label: '✅ Checklist của tôi' }];
-  if (ME.isManager || ME.isAdmin) items.push({ key: 'team', label: '👥 Đội nhóm của tôi' });
+  if (ME.isManager || isPrivileged(ME)) items.push({ key: 'team', label: '👥 Đội nhóm của tôi' });
   items.push({ key: 'kpi', label: '📊 Bảng KPI tổng hợp' });
-  if (ME.isAdmin) items.push({ key: 'staff', label: '🗂️ Quản lý nhân sự' });
+  if (isPrivileged(ME)) items.push({ key: 'staff', label: '🗂️ Quản lý nhân sự' });
+  if (isPrivileged(ME)) items.push({ key: 'positions', label: '🧩 Quản lý Checklist' });
   nav.innerHTML = items.map((it) => `<button class="navbtn" data-view="${it.key}">${it.label}</button>`).join('');
   nav.querySelectorAll('.navbtn').forEach((b) => b.addEventListener('click', () => switchView(b.dataset.view)));
 }
@@ -129,107 +134,204 @@ function switchView(view) {
   if (view === 'team') renderTeamView();
   if (view === 'kpi') renderKpiView();
   if (view === 'staff') renderStaffView();
+  if (view === 'positions') renderPositionsView();
 }
 
 /* ============================================================================
-   VIEW: CHECKLIST CỦA TÔI (3 giai đoạn)
+   CHECKLIST WIDGET — DÙNG CHUNG cho "Checklist của tôi" VÀ Detail Panel.
+   Tick 1 việc CHỈ cập nhật đúng dòng đó + vài con số tổng — KHÔNG render lại
+   toàn bộ khối, nên không "chớp" màn hình và không mất vị trí cuộn.
    ========================================================================= */
-async function renderChecklistView() {
+function createChecklistWidget(rootEl, employeeId, opts) {
+  opts = opts || {};
+  const editable = opts.editable !== false;
+  const showCloseDay = !!opts.showCloseDay;
+  let data = null;
+  let activeTab = 'moCa';
+
+  function recomputePhasePct(phaseKey) {
+    const ph = data.phases.find((p) => p.key === phaseKey);
+    const totalW = ph.items.reduce((s, it) => s + it.weight, 0) || 1;
+    const doneW = ph.items.reduce((s, it) => s + (it.checked ? it.weight : 0), 0);
+    ph.pct = (doneW / totalW) * 100;
+  }
+  function recomputeMissing() {
+    const missing = [], missingCritical = [];
+    data.phases.forEach((ph) => {
+      ph.items.forEach((it) => {
+        if (!it.checked) {
+          missing.push({ ...it, phase: ph.key });
+          if (it.weight === 3) missingCritical.push({ ...it, phase: ph.key });
+        }
+      });
+    });
+    data.missing = missing;
+    data.missingCritical = missingCritical;
+  }
+
+  async function load() {
+    rootEl.innerHTML = `<div class="empty-state">Đang tải checklist...</div>`;
+    try { data = await api('/checklist/' + employeeId); }
+    catch (e) { rootEl.innerHTML = `<div class="empty-state">${escapeHtml(e.message)}</div>`; return; }
+    renderFull();
+  }
+
+  function renderFull() {
+    const cls = { label: data.classification.label, cls: classCls(data.classification.label) };
+    rootEl.innerHTML = `
+      ${showCloseDay ? `
+        <div class="topbar">
+          <div><h1>Checklist Hôm Nay</h1><div class="sub">${new Date(data.date).toLocaleDateString('vi-VN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div></div>
+          <button class="btn btn-teal" data-act="close-day">✓ Chốt ngày — lưu vào lịch sử KPI</button>
+        </div>` : ''}
+      <div class="kpi-summary" data-role="summary">
+        <div class="kpi-card"><div class="num" data-f="taskScore" style="color:${barColor(data.taskScore)}">${data.taskScore.toFixed(0)}%</div><div class="lbl">Hoàn thành SOP</div></div>
+        <div class="kpi-card"><div class="num" data-f="compScore" style="color:${barColor(data.compScore)}">${data.compScore.toFixed(0)}%</div><div class="lbl">Năng lực</div></div>
+        <div class="kpi-card"><div class="num" data-f="kpi">${data.kpi.toFixed(1)}</div><div class="lbl">KPI · <span class="pill ${cls.cls}" data-f="classPill">${cls.label}</span></div></div>
+      </div>
+      <div data-role="missingBanner"></div>
+      <div class="tabs" data-role="tabs">
+        ${PHASE_ORDER.map((key) => {
+          const ph = data.phases.find((p) => p.key === key);
+          return `<button class="tab-btn ${activeTab === key ? 'active' : ''}" data-tab="${key}">${CONFIG.phaseLabels[key]} <span class="pct" data-phasepct="${key}" style="color:${barColor(ph.pct)}">${ph.pct.toFixed(0)}%</span></button>`;
+        }).join('')}
+      </div>
+      <div class="card pad" data-role="items"></div>
+    `;
+    renderMissingBanner();
+    renderItems();
+
+    rootEl.querySelectorAll('[data-tab]').forEach((b) => {
+      b.addEventListener('click', () => { activeTab = b.dataset.tab; rootEl.querySelectorAll('[data-tab]').forEach((x) => x.classList.toggle('active', x === b)); renderItems(); });
+    });
+    const closeBtn = rootEl.querySelector('[data-act="close-day"]');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', async () => {
+        if (!confirm(`Chốt ngày với KPI ${data.kpi.toFixed(1)} (${data.missing.length} việc còn thiếu)?\nDữ liệu sẽ được lưu vào lịch sử KPI tháng/quý/năm.`)) return;
+        try {
+          await api('/checklist/' + employeeId + '/close-day', { method: 'POST' });
+          toast('Đã chốt ngày và lưu vào lịch sử');
+          load();
+        } catch (e) { toast(e.message); }
+      });
+    }
+  }
+
+  function renderMissingBanner() {
+    const box = rootEl.querySelector('[data-role="missingBanner"]');
+    if (!box) return;
+    if (data.missingCritical.length) {
+      box.innerHTML = `
+        <div class="missing-box">
+          <div class="mh">⚠ ${data.missingCritical.length} việc TRỌNG YẾU chưa hoàn thành</div>
+          <ul>${data.missingCritical.slice(0, 12).map((m) => `<li>${escapeHtml(m.label)} <em style="color:var(--muted); font-style:normal;">(${CONFIG.phaseLabels[m.phase]})</em></li>`).join('')}</ul>
+        </div>`;
+    } else if (data.missing.length === 0) {
+      box.innerHTML = `<div class="all-done-box">✓ Đã hoàn thành 100% checklist</div>`;
+    } else {
+      box.innerHTML = '';
+    }
+  }
+
+  function renderItems() {
+    const wrap = rootEl.querySelector('[data-role="items"]');
+    const phase = data.phases.find((p) => p.key === activeTab);
+    if (!phase.items.length) {
+      wrap.innerHTML = `<div class="empty-state">Vị trí này chưa có đầu việc nào cho giai đoạn "${CONFIG.phaseLabels[activeTab]}".</div>`;
+      return;
+    }
+    wrap.innerHTML = phase.items.map((it) => `
+      <label class="check-item ${it.checked ? 'checked' : ''} ${!it.checked && it.weight === 3 ? 'critical' : ''}" data-row="${it.id}">
+        <input type="checkbox" ${it.checked ? 'checked' : ''} data-item="${it.id}" ${editable ? '' : 'disabled'}>
+        <span class="check-label">${escapeHtml(it.label)}</span>
+        <span class="check-weight w${it.weight}">${it.weight === 3 ? 'Trọng yếu' : it.weight === 2 ? 'Quan trọng' : 'Thường quy'}</span>
+      </label>
+    `).join('');
+    if (!editable) return;
+    wrap.querySelectorAll('input[type=checkbox]').forEach((cb) => {
+      cb.addEventListener('change', (ev) => onToggle(ev.target.dataset.item, ev.target.checked, ev.target.closest('[data-row]')));
+    });
+  }
+
+  function updateTabPctText(phaseKey) {
+    const ph = data.phases.find((p) => p.key === phaseKey);
+    const el = rootEl.querySelector(`[data-phasepct="${phaseKey}"]`);
+    if (el) { el.textContent = ph.pct.toFixed(0) + '%'; el.style.color = barColor(ph.pct); }
+  }
+  function updateSummaryNumbers() {
+    const sum = rootEl.querySelector('[data-role="summary"]');
+    if (!sum) return;
+    const t = sum.querySelector('[data-f="taskScore"]'); if (t) { t.textContent = data.taskScore.toFixed(0) + '%'; t.style.color = barColor(data.taskScore); }
+    const c = sum.querySelector('[data-f="compScore"]'); if (c) { c.textContent = data.compScore.toFixed(0) + '%'; c.style.color = barColor(data.compScore); }
+    const k = sum.querySelector('[data-f="kpi"]'); if (k) k.textContent = data.kpi.toFixed(1);
+  }
+
+  function onToggle(itemId, checked, rowEl) {
+    const phase = data.phases.find((p) => p.key === activeTab);
+    const it = phase.items.find((i) => i.id === itemId);
+    const prevChecked = it.checked;
+
+    // 1) Cập nhật NGAY LẬP TỨC trên giao diện (optimistic) — không gọi lại API trước
+    it.checked = checked;
+    if (rowEl) {
+      rowEl.classList.toggle('checked', checked);
+      rowEl.classList.toggle('critical', !checked && it.weight === 3);
+    }
+    recomputePhasePct(activeTab);
+    recomputeMissing();
+    updateTabPctText(activeTab);
+    renderMissingBanner();
+
+    // 2) Gửi API ở nền, khi có kết quả CHÍNH XÁC từ server thì cập nhật số liệu KPI tổng
+    api('/checklist/' + employeeId + '/item', {
+      method: 'PATCH',
+      body: JSON.stringify({ phase: activeTab, itemId, checked }),
+    }).then((res) => {
+      phase.pct = res.phasePct;
+      data.taskScore = res.taskScore;
+      data.kpi = res.kpi;
+      updateTabPctText(activeTab);
+      updateSummaryNumbers();
+    }).catch((e) => {
+      // lỗi -> hoàn tác lại đúng như cũ
+      it.checked = prevChecked;
+      if (rowEl) {
+        rowEl.classList.toggle('checked', prevChecked);
+        rowEl.classList.toggle('critical', !prevChecked && it.weight === 3);
+      }
+      recomputePhasePct(activeTab);
+      recomputeMissing();
+      updateTabPctText(activeTab);
+      renderMissingBanner();
+      toast(e.message);
+    });
+  }
+
+  return { load };
+}
+
+/* ============================================================================
+   VIEW: CHECKLIST CỦA TÔI
+   ========================================================================= */
+function renderChecklistView() {
   const empId = currentChecklistEmployeeId || ME.id;
   const el = document.getElementById('view-checklist');
-  el.innerHTML = `<div class="empty-state">Đang tải checklist...</div>`;
-  let data;
-  try { data = await api('/checklist/' + empId); }
-  catch (e) { el.innerHTML = `<div class="empty-state">${escapeHtml(e.message)}</div>`; return; }
-
-  const cls = { label: data.classification.label, cls: classCls(data.classification.label) };
-  const phaseLabels = CONFIG.phaseLabels;
-
-  el.innerHTML = `
-    <div class="topbar">
-      <div>
-        <h1>Checklist Hôm Nay</h1>
-        <div class="sub">${new Date(data.date).toLocaleDateString('vi-VN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div>
-      </div>
-      <button class="btn btn-teal" id="closeDayBtn">✓ Chốt ngày — lưu vào lịch sử KPI</button>
-    </div>
-
-    <div class="kpi-summary">
-      <div class="kpi-card"><div class="num" style="color:${barColor(data.taskScore)}">${data.taskScore.toFixed(0)}%</div><div class="lbl">Hoàn thành SOP</div></div>
-      <div class="kpi-card"><div class="num" style="color:${barColor(data.compScore)}">${data.compScore.toFixed(0)}%</div><div class="lbl">Năng lực</div></div>
-      <div class="kpi-card"><div class="num">${data.kpi.toFixed(1)}</div><div class="lbl">KPI hôm nay · <span class="pill ${cls.cls}">${cls.label}</span></div></div>
-    </div>
-
-    ${data.missingCritical.length ? `
-      <div class="missing-box">
-        <div class="mh">⚠ ${data.missingCritical.length} việc TRỌNG YẾU chưa hoàn thành</div>
-        <ul>${data.missingCritical.map((m) => `<li>${escapeHtml(m.label)} <em style="color:var(--muted); font-style:normal;">(${phaseLabels[m.phase]})</em></li>`).join('')}</ul>
-      </div>` : ''}
-
-    <div class="tabs" id="checklistTabs">
-      ${PHASE_ORDER.map((key) => {
-        const ph = data.phases.find((p) => p.key === key);
-        return `<button class="tab-btn ${currentChecklistTab === key ? 'active' : ''}" data-tab="${key}">${phaseLabels[key]} <span class="pct" style="color:${barColor(ph.pct)}">${ph.pct.toFixed(0)}%</span></button>`;
-      }).join('')}
-    </div>
-
-    <div class="card pad" id="checklistItemsWrap"></div>
-  `;
-
-  renderChecklistItems(data);
-
-  el.querySelectorAll('#checklistTabs .tab-btn').forEach((b) => {
-    b.addEventListener('click', () => { currentChecklistTab = b.dataset.tab; renderChecklistView(); });
-  });
-
-  document.getElementById('closeDayBtn').addEventListener('click', async () => {
-    if (!confirm(`Chốt ngày với KPI ${data.kpi.toFixed(1)} (${data.missing.length} việc còn thiếu)?\nDữ liệu sẽ được lưu vào lịch sử KPI tháng/quý/năm.`)) return;
-    try {
-      await api('/checklist/' + empId + '/close-day', { method: 'POST' });
-      toast('Đã chốt ngày và lưu vào lịch sử');
-      renderChecklistView();
-    } catch (e) { toast(e.message); }
-  });
-}
-
-function renderChecklistItems(data) {
-  const wrap = document.getElementById('checklistItemsWrap');
-  const phase = data.phases.find((p) => p.key === currentChecklistTab);
-  if (!phase.items.length) {
-    wrap.innerHTML = `<div class="empty-state">Vị trí này chưa có đầu việc nào cho giai đoạn "${CONFIG.phaseLabels[currentChecklistTab]}".</div>`;
-    return;
-  }
-  wrap.innerHTML = phase.items.map((it) => `
-    <label class="check-item ${it.checked ? 'checked' : ''} ${!it.checked && it.weight === 3 ? 'critical' : ''}">
-      <input type="checkbox" ${it.checked ? 'checked' : ''} data-item="${it.id}">
-      <span class="check-label">${escapeHtml(it.label)}</span>
-      <span class="check-weight w${it.weight}">${it.weight === 3 ? 'Trọng yếu' : it.weight === 2 ? 'Quan trọng' : 'Thường quy'}</span>
-    </label>
-  `).join('');
-  wrap.querySelectorAll('input[type=checkbox]').forEach((cb) => {
-    cb.addEventListener('change', async (ev) => {
-      const itemId = ev.target.dataset.item;
-      try {
-        await api('/checklist/' + (currentChecklistEmployeeId || ME.id) + '/item', {
-          method: 'PATCH',
-          body: JSON.stringify({ phase: currentChecklistTab, itemId, checked: ev.target.checked }),
-        });
-        renderChecklistView();
-      } catch (e) { toast(e.message); ev.target.checked = !ev.target.checked; }
-    });
-  });
+  const widget = createChecklistWidget(el, empId, { editable: true, showCloseDay: true });
+  widget.load();
 }
 
 /* ============================================================================
-   VIEW: ĐỘI NHÓM CỦA TÔI (Quản lý / Admin)
+   VIEW: ĐỘI NHÓM CỦA TÔI (Quản lý / Admin / Quản Lý Vùng)
    ========================================================================= */
 async function renderTeamView() {
   const el = document.getElementById('view-team');
   el.innerHTML = `<div class="empty-state">Đang tải...</div>`;
-  let list;
-  try { list = await api('/kpi/today'); }
+  let resp;
+  try { resp = await api('/kpi/today'); }
   catch (e) { el.innerHTML = `<div class="empty-state">${escapeHtml(e.message)}</div>`; return; }
 
+  const list = resp.list;
+  const showBonus = resp.viewerIsPrivileged; // chỉ Admin / Quản Lý Vùng thấy cột đề xuất thưởng
   list.sort((a, b) => b.kpi - a.kpi);
   const total = list.length;
   const avg = total ? list.reduce((s, e) => s + e.kpi, 0) / total : 0;
@@ -238,7 +340,7 @@ async function renderTeamView() {
 
   el.innerHTML = `
     <div class="topbar">
-      <div><h1>Đội Nhóm Của Tôi</h1><div class="sub">Tiến độ SOP hôm nay theo 3 giai đoạn · Mở ca / Giao ca / Đóng ca</div></div>
+      <div><h1>Đội Nhóm Của Tôi</h1><div class="sub">Tiến độ SOP hôm nay theo 3 giai đoạn · Mở ca / Giao ca / Đóng ca${showBonus ? ' · Kèm đề xuất thưởng' : ''}</div></div>
     </div>
     <div class="grid grid-4" style="margin-bottom:16px;">
       <div class="card stat"><div class="k">Tổng nhân sự</div><div class="v">${total}</div></div>
@@ -254,7 +356,11 @@ async function renderTeamView() {
     <div class="card">
       <div style="overflow-x:auto;">
         <table>
-          <thead><tr><th>Tên</th><th>Vị trí</th><th>Tầng</th><th>Mở ca</th><th>Giao ca</th><th>Đóng ca</th><th>% SOP</th><th>KPI</th><th>Xếp loại</th><th></th></tr></thead>
+          <thead><tr>
+            <th>Tên</th><th>Vị trí</th><th>Tầng</th><th>Mở ca</th><th>Giao ca</th><th>Đóng ca</th><th>% SOP</th><th>KPI</th><th>Xếp loại</th>
+            ${showBonus ? '<th>Đề xuất thưởng</th>' : ''}
+            <th></th>
+          </tr></thead>
           <tbody id="teamBody"></tbody>
         </table>
       </div>
@@ -264,7 +370,7 @@ async function renderTeamView() {
   const body = document.getElementById('teamBody');
   body.innerHTML = list.map((e) => `
     <tr>
-      <td><b>${escapeHtml(e.name)}</b></td>
+      <td><b>${escapeHtml(e.name)}</b>${e.isAdmin ? ' <span class="pill pill-xs" style="font-size:9px;">Admin</span>' : e.isRegionalManager ? ' <span class="pill pill-t" style="font-size:9px;">QL Vùng</span>' : ''}</td>
       <td>${escapeHtml(e.positionLabel)}</td>
       <td><span class="tier-pill">Tầng ${e.tier}</span></td>
       <td>${e.phases.moCa.toFixed(0)}%</td>
@@ -273,6 +379,7 @@ async function renderTeamView() {
       <td>${e.taskScore.toFixed(0)}%</td>
       <td><strong>${e.kpi.toFixed(1)}</strong></td>
       <td><span class="pill ${classCls(e.classification.label)}">${e.classification.label}</span></td>
+      ${showBonus ? `<td><span class="pill-bonus ${bonusCls(e.bonusSuggestion.tone)}" title="${escapeHtml(e.bonusSuggestion.reason)}">${escapeHtml(e.bonusSuggestion.label)}</span></td>` : ''}
       <td><button class="btn btn-sm" data-open="${e.id}">Xem chi tiết</button></td>
     </tr>
   `).join('');
@@ -280,9 +387,10 @@ async function renderTeamView() {
 }
 
 /* ============================================================================
-   VIEW: BẢNG KPI TỔNG HỢP (tháng / quý / năm)
+   VIEW: BẢNG KPI TỔNG HỢP (tháng / quý / năm) + biểu đồ xu hướng theo tháng
    ========================================================================= */
 let kpiPeriod = { period: 'month', year: new Date().getFullYear(), month: new Date().getMonth() + 1, quarter: Math.ceil((new Date().getMonth() + 1) / 3) };
+let trendEmployeeId = null;
 
 async function renderKpiView() {
   const el = document.getElementById('view-kpi');
@@ -317,6 +425,15 @@ async function renderKpiView() {
       </div>
       <div class="empty-state hidden" id="kpiEmpty">Chưa có dữ liệu lịch sử trong kỳ này.</div>
     </div>
+
+    <div class="section-title" style="margin-top:22px;">Xu hướng KPI theo tháng — theo dõi sự tiến bộ từng người</div>
+    <div class="card pad">
+      <div class="period-bar" style="margin-bottom:4px;">
+        <select id="trendEmpSelect" style="min-width:240px;"></select>
+      </div>
+      <div class="bar-chart-wrap" id="trendChart"></div>
+      <div class="empty-state hidden" id="trendEmpty">Chưa có dữ liệu lịch sử cho nhân sự này.</div>
+    </div>
   `;
   document.getElementById('periodType').addEventListener('change', (e) => { kpiPeriod.period = e.target.value; renderKpiView(); });
   document.getElementById('periodMonth').addEventListener('change', (e) => { kpiPeriod.month = Number(e.target.value); loadKpiTable(); });
@@ -324,6 +441,7 @@ async function renderKpiView() {
   document.getElementById('periodYear').addEventListener('change', (e) => { kpiPeriod.year = Number(e.target.value); loadKpiTable(); });
   document.getElementById('exportKpiCsv').addEventListener('click', exportKpiCsv);
   await loadKpiTable();
+  await loadTrendSelector();
 }
 
 let lastKpiRollup = null;
@@ -359,9 +477,42 @@ function exportKpiCsv() {
   URL.revokeObjectURL(url);
 }
 
+async function loadTrendSelector() {
+  let list;
+  try { list = await api('/employees'); } catch (e) { toast(e.message); return; }
+  const sel = document.getElementById('trendEmpSelect');
+  if (!sel) return;
+  sel.innerHTML = list.map((e) => `<option value="${e.id}">${e.id === ME.id ? '👤 Bản thân — ' : ''}${escapeHtml(e.name)} (${escapeHtml(e.positionLabel)})</option>`).join('');
+  trendEmployeeId = trendEmployeeId && list.some((e) => e.id === trendEmployeeId) ? trendEmployeeId : (list.find((e) => e.id === ME.id) ? ME.id : (list[0] && list[0].id));
+  if (trendEmployeeId) sel.value = trendEmployeeId;
+  sel.addEventListener('change', () => { trendEmployeeId = sel.value; loadTrendChart(); });
+  await loadTrendChart();
+}
+async function loadTrendChart() {
+  const chart = document.getElementById('trendChart');
+  const emptyBox = document.getElementById('trendEmpty');
+  if (!trendEmployeeId) { chart.innerHTML = ''; emptyBox.classList.remove('hidden'); return; }
+  let data;
+  try { data = await api('/kpi/trend/' + trendEmployeeId + '?months=12'); } catch (e) { toast(e.message); return; }
+  const months = data.months;
+  const hasAny = months.some((m) => m.count > 0);
+  emptyBox.classList.toggle('hidden', hasAny);
+  chart.innerHTML = months.map((m) => {
+    const h = Math.max(2, (m.avgKpi / 100) * 160);
+    return `
+      <div class="bar-chart-col">
+        <div class="bar-chart-val">${m.count ? m.avgKpi.toFixed(0) : '–'}</div>
+        <div class="bar-chart-bar" style="height:${h}px; background:${barColor(m.avgKpi)};" title="${m.label}: KPI TB ${m.avgKpi.toFixed(1)} (${m.count} ngày đã chốt)"></div>
+        <div class="bar-chart-label">${m.label}</div>
+      </div>`;
+  }).join('');
+}
+
 /* ============================================================================
-   DETAIL PANEL (xem 1 nhân sự: checklist hôm nay, năng lực, đánh giá, lịch sử)
+   DETAIL PANEL (xem 1 nhân sự: checklist CÓ THỂ SỬA, năng lực, đánh giá, lịch sử)
    ========================================================================= */
+let detailChecklistWidget = null;
+
 async function openDetail(employeeId) {
   document.getElementById('detailOverlay').classList.add('show');
   document.getElementById('detailPanel').classList.add('show');
@@ -376,10 +527,9 @@ document.getElementById('detailOverlay').addEventListener('click', closeDetail);
 async function renderDetail(employeeId) {
   const panel = document.getElementById('detailPanel');
   panel.innerHTML = `<div class="empty-state">Đang tải...</div>`;
-  let emp, checklist, reviews, rollup;
+  let emp, reviews, rollup;
   try {
     emp = await api('/employees/' + employeeId);
-    checklist = await api('/checklist/' + employeeId);
     reviews = await api('/reviews/' + employeeId);
     rollup = await api('/kpi/rollup/' + employeeId + '?period=month&year=' + new Date().getFullYear() + '&month=' + (new Date().getMonth() + 1));
   } catch (e) { panel.innerHTML = `<div class="empty-state">${escapeHtml(e.message)}</div>`; return; }
@@ -387,35 +537,27 @@ async function renderDetail(employeeId) {
   currentCompValues = emp.competency || {};
   const compList = await getCompetencyList(emp.position);
   const isSelf = emp.id === ME.id;
-  const canScore = (ME.isAdmin || ME.isManager) && !isSelf;
+  // Ai được phép TICK checklist của người khác: chính họ, Admin, Quản Lý Vùng, hoặc
+  // Quản lý trực tiếp (ME.isManager — backend tự kiểm tra lại theo visibleEmployeeIds).
+  const canEditChecklist = isSelf || isPrivileged(ME) || ME.isManager;
+  const canScore = (isPrivileged(ME) || ME.isManager) && !isSelf;
 
   panel.innerHTML = `
     <div class="emp-detail-head">
       <div>
-        <h3>${escapeHtml(emp.name)}</h3>
+        <h3>${escapeHtml(emp.name)}${emp.isAdmin ? ' <span class="pill pill-xs">Admin</span>' : emp.isRegionalManager ? ' <span class="pill pill-t">QL Vùng</span>' : ''}</h3>
         <div class="sub" style="color:var(--muted); font-size:12px;">${escapeHtml(emp.positionLabel)} · Tầng ${emp.tier} · Mã ${escapeHtml(emp.employeeCode)}</div>
       </div>
       <button class="close-x" id="closeDetailBtn">&times;</button>
     </div>
     <div class="emp-detail-body">
-      <div class="kpi-summary">
-        <div class="kpi-card"><div class="num" style="color:${barColor(emp.today.taskScore)}">${emp.today.taskScore.toFixed(0)}%</div><div class="lbl">SOP hôm nay</div></div>
-        <div class="kpi-card"><div class="num" style="color:${barColor(emp.today.compScore)}">${emp.today.compScore.toFixed(0)}%</div><div class="lbl">Năng lực</div></div>
-        <div class="kpi-card"><div class="num">${emp.today.kpi.toFixed(1)}</div><div class="lbl">KPI hôm nay</div></div>
-      </div>
+      ${isPrivileged(ME) ? `
+        <div style="margin-bottom:16px;">
+          <span class="pill-bonus ${bonusCls(emp.bonusSuggestion.tone)}" title="${escapeHtml(emp.bonusSuggestion.reason)}">💰 ${escapeHtml(emp.bonusSuggestion.label)}</span>
+        </div>` : ''}
 
-      <div class="section-title">Tiến độ checklist hôm nay (chỉ xem)</div>
-      <div class="tabs">
-        ${PHASE_ORDER.map((k) => {
-          const ph = checklist.phases.find((p) => p.key === k);
-          return `<div class="tab-btn" style="cursor:default;">${CONFIG.phaseLabels[k]} <span class="pct" style="color:${barColor(ph.pct)}">${ph.pct.toFixed(0)}%</span></div>`;
-        }).join('')}
-      </div>
-      ${checklist.missing.length ? `
-        <div class="missing-box">
-          <div class="mh">⚠ ${checklist.missing.length} việc chưa hoàn thành</div>
-          <ul>${checklist.missing.slice(0, 12).map((m) => `<li>${escapeHtml(m.label)} <em style="color:var(--muted); font-style:normal;">(${CONFIG.phaseLabels[m.phase]})</em></li>`).join('')}</ul>
-        </div>` : `<div class="all-done-box">✓ Đã hoàn thành 100% checklist hôm nay</div>`}
+      <div class="section-title">Checklist hôm nay ${canEditChecklist ? '— có thể tick trực tiếp tại đây' : '(chỉ xem)'}</div>
+      <div id="detailChecklistWrap"></div>
 
       <div class="section-title">KPI tháng này (${rollup.count} ngày đã chốt)</div>
       <div class="kpi-summary">
@@ -448,6 +590,9 @@ async function renderDetail(employeeId) {
   `;
 
   document.getElementById('closeDetailBtn').addEventListener('click', closeDetail);
+
+  detailChecklistWidget = createChecklistWidget(document.getElementById('detailChecklistWrap'), employeeId, { editable: canEditChecklist, showCloseDay: false });
+  detailChecklistWidget.load();
 
   const compGrid = document.getElementById('compGrid');
   compGrid.innerHTML = compList.map((c) => `
@@ -494,7 +639,7 @@ function renderReviewHistory(reviews) {
   return `<table><thead><tr><th>Ngày</th><th>Kỳ</th><th>Người ĐG</th><th>Năng lực</th><th>KPI</th><th>Nhận xét</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
-// Lấy danh sách tiêu chí năng lực áp dụng cho vị trí (kèm giá trị hiện tại) — dùng chung config đã tải + gọi lại info nhân sự
+// Lấy danh sách tiêu chí năng lực áp dụng cho vị trí (kèm giá trị hiện tại)
 const BASE_COMP_STATIC = [
   { id: 'chuyen-mon', label: 'Kiến thức chuyên môn / nghiệp vụ' },
   { id: 'tuan-thu', label: 'Tuân thủ quy trình & an toàn vệ sinh (ATTP)' },
@@ -511,7 +656,7 @@ async function getCompetencyList(positionKey) {
 let currentCompValues = {};
 
 /* ============================================================================
-   VIEW: QUẢN LÝ NHÂN SỰ (Admin)
+   VIEW: QUẢN LÝ NHÂN SỰ (Admin / Quản Lý Vùng)
    ========================================================================= */
 function fillPositionSelect() {
   const sel = document.getElementById('f_position');
@@ -551,7 +696,10 @@ async function renderStaffView() {
   `;
   document.getElementById('addStaffBtn').addEventListener('click', () => openStaffModal(null));
   const body = document.getElementById('staffBody');
-  body.innerHTML = list.map((e) => `
+  body.innerHTML = list.map((e) => {
+    // Quản Lý Vùng (không phải Admin gốc) không được sửa/xoá tài khoản Admin.
+    const lockedForMe = e.isAdmin && !ME.isAdmin;
+    return `
     <tr>
       <td><b>${escapeHtml(e.name)}</b></td>
       <td>${escapeHtml(e.employeeCode)}</td>
@@ -559,18 +707,19 @@ async function renderStaffView() {
       <td>${escapeHtml(e.branch || '—')}</td>
       <td style="color:var(--muted);">${escapeHtml(e.phone || '—')}</td>
       <td>${escapeHtml(e.status)}</td>
-      <td>${e.isAdmin ? '<span class="pill pill-xs">Admin</span>' : (e.isManager ? '<span class="pill pill-t">Quản lý</span>' : '—')}</td>
+      <td>${e.isAdmin ? '<span class="pill pill-xs">Admin</span>' : e.isRegionalManager ? '<span class="pill pill-t">Quản Lý Vùng</span>' : (e.isManager ? '<span class="pill pill-tb">Quản lý</span>' : '—')}</td>
       <td><strong>${e.today.kpi.toFixed(1)}</strong></td>
       <td style="white-space:nowrap;">
         <button class="btn btn-sm" data-open="${e.id}">Xem</button>
-        <button class="btn btn-sm" data-edit="${e.id}">Sửa</button>
-        <button class="btn btn-danger btn-sm" data-del="${e.id}">Xoá</button>
+        <button class="btn btn-sm" data-edit="${e.id}" ${lockedForMe ? 'disabled title="Chỉ Admin mới sửa được tài khoản Admin"' : ''}>Sửa</button>
+        <button class="btn btn-danger btn-sm" data-del="${e.id}" ${lockedForMe ? 'disabled title="Chỉ Admin mới xoá được tài khoản Admin"' : ''}>Xoá</button>
       </td>
     </tr>
-  `).join('');
+  `;
+  }).join('');
   body.querySelectorAll('[data-open]').forEach((b) => b.addEventListener('click', () => openDetail(b.dataset.open)));
-  body.querySelectorAll('[data-edit]').forEach((b) => b.addEventListener('click', () => openStaffModal(b.dataset.edit, list)));
-  body.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', async () => {
+  body.querySelectorAll('[data-edit]:not([disabled])').forEach((b) => b.addEventListener('click', () => openStaffModal(b.dataset.edit, list)));
+  body.querySelectorAll('[data-del]:not([disabled])').forEach((b) => b.addEventListener('click', async () => {
     const emp = list.find((e) => e.id === b.dataset.del);
     if (!emp) return;
     if (!confirm(`Xoá nhân sự "${emp.name}"? Toàn bộ checklist hôm nay của người này sẽ bị xoá theo (lịch sử KPI vẫn giữ nguyên).`)) return;
@@ -594,6 +743,12 @@ function openStaffModal(empId, list) {
   document.getElementById('f_start').value = emp ? (emp.startDate || '') : '';
   document.getElementById('f_status').value = emp ? emp.status : 'Đang làm';
   document.getElementById('f_isAdmin').checked = emp ? !!emp.isAdmin : false;
+  document.getElementById('f_isRegionalManager').checked = emp ? !!emp.isRegionalManager : false;
+  // Chỉ Admin gốc mới được thấy/sửa 2 ô cấp quyền này
+  const privRow = document.getElementById('privilegeRow');
+  privRow.style.display = ME.isAdmin ? 'block' : 'none';
+  document.getElementById('f_isAdmin').disabled = !ME.isAdmin;
+  document.getElementById('f_isRegionalManager').disabled = !ME.isAdmin;
   openModal('staffModalBackdrop');
 }
 
@@ -606,8 +761,11 @@ document.getElementById('saveStaffBtn').addEventListener('click', async () => {
     phone: document.getElementById('f_phone').value.trim(),
     startDate: document.getElementById('f_start').value,
     status: document.getElementById('f_status').value,
-    isAdmin: document.getElementById('f_isAdmin').checked,
   };
+  if (ME.isAdmin) {
+    payload.isAdmin = document.getElementById('f_isAdmin').checked;
+    payload.isRegionalManager = document.getElementById('f_isRegionalManager').checked;
+  }
   const pin = document.getElementById('f_pin').value.trim();
   if (!payload.name) { toast('Vui lòng nhập họ tên'); return; }
   try {
@@ -626,6 +784,140 @@ document.getElementById('saveStaffBtn').addEventListener('click', async () => {
     renderStaffView();
   } catch (e) { toast(e.message); }
 });
+
+/* ============================================================================
+   VIEW: QUẢN LÝ CHECKLIST (Admin / Quản Lý Vùng) — sửa checklist theo vị trí
+   ========================================================================= */
+let posEditorData = null; // toàn bộ catalog { tiers, phaseLabels, positions }
+let posEditorActiveKey = null;
+let posEditorActivePhase = 'moCa';
+
+async function renderPositionsView() {
+  const el = document.getElementById('view-positions');
+  el.innerHTML = `<div class="empty-state">Đang tải...</div>`;
+  try { posEditorData = await api('/positions'); }
+  catch (e) { el.innerHTML = `<div class="empty-state">${escapeHtml(e.message)}</div>`; return; }
+
+  if (!posEditorActiveKey || !posEditorData.positions[posEditorActiveKey]) {
+    posEditorActiveKey = Object.keys(posEditorData.positions)[0];
+  }
+
+  el.innerHTML = `
+    <div class="topbar">
+      <div><h1>Quản Lý Checklist</h1><div class="sub">Sửa nội dung công việc, trọng số, thêm/xoá đầu việc cho từng vị trí — áp dụng ngay cho toàn bộ nhân sự giữ vị trí đó.</div></div>
+    </div>
+    <div class="pos-editor-grid">
+      <div class="card">
+        <div class="pos-list" id="posList"></div>
+      </div>
+      <div class="card pad" id="posEditorBody"></div>
+    </div>
+  `;
+  renderPosList();
+  renderPosEditor();
+}
+
+function renderPosList() {
+  const wrap = document.getElementById('posList');
+  const tiers = posEditorData.tiers;
+  const positions = posEditorData.positions;
+  let html = '';
+  tiers.forEach((tier) => {
+    const keys = Object.entries(positions).filter(([, p]) => p.tier === tier.id).map(([k]) => k);
+    if (!keys.length) return;
+    html += `<div class="pos-list-tier">${escapeHtml(tier.label)}</div>`;
+    keys.forEach((k) => {
+      const p = positions[k];
+      const itemCount = ['moCa', 'giaoCa', 'dongCa'].reduce((s, ph) => s + (p.phases[ph] ? p.phases[ph].length : 0), 0);
+      html += `
+        <div class="pos-list-item ${k === posEditorActiveKey ? 'active' : ''}" data-key="${k}">
+          <div class="plabel">${escapeHtml(p.label)}</div>
+          <div class="pmeta">${itemCount} đầu việc${p.hasLeadership ? ' · Quản lý' : ''}</div>
+        </div>`;
+    });
+  });
+  wrap.innerHTML = html;
+  wrap.querySelectorAll('[data-key]').forEach((el) => el.addEventListener('click', () => {
+    posEditorActiveKey = el.dataset.key;
+    posEditorActivePhase = 'moCa';
+    renderPosList();
+    renderPosEditor();
+  }));
+}
+
+function renderPosEditor() {
+  const body = document.getElementById('posEditorBody');
+  const pos = posEditorData.positions[posEditorActiveKey];
+  if (!pos) { body.innerHTML = `<div class="empty-state">Chọn 1 vị trí bên trái để sửa checklist.</div>`; return; }
+
+  body.innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:10px;">
+      <div style="font-weight:800; font-size:15px;">${escapeHtml(pos.label)}</div>
+      <button class="btn btn-primary btn-sm" id="savePosBtn">💾 Lưu thay đổi</button>
+    </div>
+    <div class="tabs" id="posPhaseTabs">
+      ${PHASE_ORDER.map((k) => `<button class="tab-btn ${posEditorActivePhase === k ? 'active' : ''}" data-phase="${k}">${posEditorData.phaseLabels[k]} <span class="pct">(${(pos.phases[k] || []).length})</span></button>`).join('')}
+    </div>
+    <div id="posItemsWrap"></div>
+    <button class="btn btn-sm add-item-row" id="addItemBtn">+ Thêm việc vào giai đoạn này</button>
+  `;
+  document.getElementById('posPhaseTabs').querySelectorAll('[data-phase]').forEach((b) => {
+    b.addEventListener('click', () => { posEditorActivePhase = b.dataset.phase; renderPosEditor(); });
+  });
+  renderPosItems();
+  document.getElementById('addItemBtn').addEventListener('click', () => {
+    pos.phases[posEditorActivePhase].push({ id: '', label: '', weight: 2 });
+    renderPosItems();
+  });
+  document.getElementById('savePosBtn').addEventListener('click', savePosition);
+}
+
+function renderPosItems() {
+  const wrap = document.getElementById('posItemsWrap');
+  const pos = posEditorData.positions[posEditorActiveKey];
+  const items = pos.phases[posEditorActivePhase];
+  if (!items.length) {
+    wrap.innerHTML = `<div class="empty-state" style="padding:20px 0;">Chưa có việc nào trong giai đoạn này. Bấm "+ Thêm việc" bên dưới.</div>`;
+    return;
+  }
+  wrap.innerHTML = items.map((it, idx) => `
+    <div class="item-row" data-idx="${idx}">
+      <input type="text" value="${escapeHtml(it.label)}" placeholder="Nội dung công việc..." data-f="label">
+      <select data-f="weight">
+        <option value="3" ${it.weight === 3 ? 'selected' : ''}>Trọng yếu (3đ)</option>
+        <option value="2" ${it.weight === 2 ? 'selected' : ''}>Quan trọng (2đ)</option>
+        <option value="1" ${it.weight === 1 ? 'selected' : ''}>Thường quy (1đ)</option>
+      </select>
+      <button class="rm-item" title="Xoá việc này">×</button>
+    </div>
+  `).join('');
+  wrap.querySelectorAll('.item-row').forEach((row) => {
+    const idx = Number(row.dataset.idx);
+    row.querySelector('[data-f="label"]').addEventListener('input', (e) => { items[idx].label = e.target.value; });
+    row.querySelector('[data-f="weight"]').addEventListener('change', (e) => { items[idx].weight = Number(e.target.value); });
+    row.querySelector('.rm-item').addEventListener('click', () => {
+      items.splice(idx, 1);
+      renderPosItems();
+    });
+  });
+}
+
+async function savePosition() {
+  const pos = posEditorData.positions[posEditorActiveKey];
+  for (const ph of PHASE_ORDER) {
+    for (const it of pos.phases[ph]) {
+      if (!it.label || !it.label.trim()) { toast('Còn 1 việc trống nội dung — vui lòng điền hoặc xoá dòng đó'); return; }
+    }
+  }
+  try {
+    const updated = await api('/positions/' + posEditorActiveKey, { method: 'PUT', body: JSON.stringify({ phases: pos.phases }) });
+    posEditorData.positions[posEditorActiveKey] = updated;
+    toast('Đã lưu checklist — áp dụng ngay cho toàn bộ nhân sự vị trí này');
+    renderPosList();
+    renderPosEditor();
+    CONFIG = await api('/employees/config/positions'); // đồng bộ lại số lượng đầu việc hiển thị nơi khác
+  } catch (e) { toast(e.message); }
+}
 
 /* ============================================================================
    ĐỔI PIN CỦA CHÍNH MÌNH
