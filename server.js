@@ -22,8 +22,8 @@ function ensureInitialAdmin() {
       id: 'e' + Math.random().toString(36).slice(2, 10),
       employeeCode: code,
       pinHash: hashPin(pin),
-      name, position: 'quan-ly-cua-hang', branch: '', phone: '', startDate: '', status: 'Đang làm',
-      isAdmin: true, isRegionalManager: false,
+      name, position: null, branch: '', phone: '', startDate: '', status: 'Đang làm',
+      isAdmin: true, isRegionalManager: false, managerId: null,
     });
     console.log('============================================================');
     console.log(`Đã tạo tài khoản Admin đầu tiên — Mã NV: "${code}" · PIN: "${pin}"`);
@@ -32,6 +32,22 @@ function ensureInitialAdmin() {
     return true; // báo hiệu có thay đổi cần lưu
   }
   return false;
+}
+
+// ---- Dọn dữ liệu cũ: nếu Admin/Quản Lý Vùng từ bản trước còn dính 1 vị trí
+// (bản cũ gán Admin mặc định = "Quản Lý Cửa Hàng"), gỡ bỏ để họ không còn xuất
+// hiện trong checklist/KPI nữa — đúng mô hình mới (Admin/QTV là tài khoản hệ
+// thống thuần tuý, không tham gia vận hành).
+function migrateSystemAccountsToNoPosition() {
+  const data = db.getData();
+  let changed = false;
+  data.employees.forEach((e) => {
+    if ((e.isAdmin || e.isRegionalManager) && (e.position || e.managerId)) {
+      e.position = null; e.managerId = null;
+      changed = true;
+    }
+  });
+  return changed;
 }
 
 // ---- API routes ----
@@ -62,6 +78,7 @@ async function startServer() {
       dirty = true;
     }
     if (ensureInitialAdmin()) dirty = true;
+    if (migrateSystemAccountsToNoPosition()) { console.log('Đã gỡ vị trí khỏi tài khoản Admin/Quản Lý Vùng (dữ liệu cũ).'); dirty = true; }
     if (dirty) await db.saveSync();
 
     app.listen(PORT, () => {

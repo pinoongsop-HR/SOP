@@ -5,18 +5,24 @@ Phần mềm nội bộ: **Checklist SOP theo 3 giai đoạn (Mở ca – Giao c
 phân quyền theo sơ đồ tổ chức, bảng KPI tháng/quý/năm kèm biểu đồ tiến bộ.
 
 **Bản này có gì mới so với bản trước:**
-- Sửa lỗi deploy fail trên Render (xem mục 0 ngay dưới).
-- Thêm vai trò **Quản Lý Vùng** (quyền tương đương Admin, không xoá/sửa được Admin).
-- **Admin / Quản Lý Vùng sửa được checklist** ngay trên giao diện (trang "Quản lý
-  Checklist") — không cần sửa code, không cần deploy lại.
-- **Tick checklist không còn giật/chớp màn hình** — mỗi lần tick chỉ cập nhật đúng
-  dòng đó + vài con số, không tải lại cả trang.
-- Xem chi tiết 1 nhân sự → **tick trực tiếp checklist của người đó** (Admin, Quản
-  Lý Vùng, hoặc quản lý trực tiếp).
-- Trang "Đội Nhóm Của Tôi" hiện thêm cột **Đề xuất thưởng** (chỉ Admin/Quản Lý
-  Vùng thấy) — không cần bấm vào từng người để xem.
-- Trang "Bảng KPI Tổng Hợp" có thêm **biểu đồ cột xu hướng KPI theo tháng** cho
-  từng người, để nắm tiến bộ qua thời gian.
+- **Admin bị khoá tuyệt đối**: không ai — kể cả Admin khác — sửa/xoá được 1 tài
+  khoản Admin, chỉ chính chủ tự sửa thông tin/PIN của mình.
+- **Admin &amp; Quản Lý Vùng không còn gắn vị trí, không xuất hiện trong checklist
+  hay bảng KPI** — vì họ chỉ giao việc, không trực tiếp làm SOP.
+- **Checklist dùng chung theo vị trí**: nếu 2+ người cùng giữ 1 vị trí (VD 2
+  người cùng làm NV Xôi), họ nhìn thấy CHUNG 1 bảng việc — ai tick trước thì
+  việc đó tính chung cho cả nhóm, hệ thống tự ghi lại **ai đã ký** từng việc,
+  và tính riêng **% đóng góp cá nhân** để so sánh hiệu suất giữa những người
+  cùng vị trí (không còn tình trạng "A làm, B tick nhận").
+- **Đầu việc tự động theo đội nhóm**: Admin đánh dấu 1 việc của Tầng 2-3-4 là
+  "Tự động" → việc đó không tick tay được nữa, hệ thống tự đánh dấu hoàn thành
+  khi TOÀN BỘ đội nhóm cấp dưới đạt đúng 100%.
+- **Gán quản lý trực tiếp cho nhân sự Tầng 1** (tuỳ chọn) — dùng khi có nhiều
+  người cùng giữ 1 chức quản lý (VD 2 Quản Lý Ca khác ca) và cần tách rõ ai
+  quản ai, thay vì chỉ suy luận theo vị trí + chi nhánh.
+- **Thêm / xoá hẳn 1 vị trí** ngay trên giao diện (không chỉ sửa checklist của
+  vị trí có sẵn) — kèm chặn xoá nếu còn người đang giữ hoặc còn vị trí khác
+  báo cáo lên nó.
 
 ---
 
@@ -40,7 +46,8 @@ Vào Render → service của anh → **Settings** → mục **Build & Deploy**,
 2. **Build Command** phải là `npm install`, **Start Command** phải là `node server.js`.
 
 Sau khi sửa xong bản mới trong file zip này (đã thêm Quản Lý Vùng + sửa checklist
-được qua UI), làm theo mục 3–4 bên dưới để đẩy code mới lên và deploy lại.
+được qua UI + checklist dùng chung + tự động hoá), làm theo mục 3–4 bên dưới để
+đẩy code mới lên và deploy lại.
 
 ---
 
@@ -203,35 +210,55 @@ free tier), mỗi lần deploy lại/redeploy không mất dữ liệu vì đã 
 - Đăng nhập → **Checklist của tôi** → chọn tab Mở ca / Giao ca / Đóng ca →
   tick từng việc khi làm xong. Tick phát huy hiệu quả **ngay lập tức, không
   giật màn hình** — cứ tick liên tục từ trên xuống dưới thoải mái.
-- Cuối ca bấm **"Chốt ngày — lưu vào lịch sử KPI"** để điểm hôm nay được ghi
-  vào lịch sử (không chốt cũng không sao, quản lý chốt hộ được).
+- **Nếu vị trí của bạn có nhiều người cùng làm** (VD 2 người cùng là NV Xôi),
+  checklist là **bảng dùng chung** — hệ thống hiện rõ "Bảng checklist dùng
+  chung với: [tên đồng nghiệp]" ngay đầu trang. Ai tick trước thì việc đó
+  tính chung cho cả nhóm và **ghi lại đúng tên người đã ký**, đồng nghiệp
+  đăng nhập vào sẽ thấy việc đó đã xong (không tick trùng, không chồng chéo).
+  Ô **"Đóng góp cá nhân"** cho biết bạn đã tự tay làm bao nhiêu % trong số
+  việc cả nhóm đã hoàn thành — dùng để so sánh hiệu suất công bằng giữa
+  những người cùng vị trí.
+- Cuối ca bấm **"Chốt ngày — lưu vào lịch sử KPI"** để điểm hôm nay (cả %
+  hoàn thành chung lẫn % đóng góp cá nhân) được ghi vào lịch sử.
 
 ### Quản lý (Bếp Trưởng, Giám Sát Sảnh, Quản Lý Ca)
 - **Đội nhóm của tôi**: thấy % Mở ca / Giao ca / Đóng ca + KPI hôm nay của
-  đúng nhân sự cấp dưới, cùng chi nhánh (tự lọc theo sơ đồ tổ chức).
+  đúng nhân sự cấp dưới, cùng chi nhánh (tự lọc theo sơ đồ tổ chức, hoặc theo
+  đúng người được gán "báo cáo trực tiếp" nếu có).
 - Bấm **Xem chi tiết** 1 nhân sự → có thể **tick trực tiếp checklist thay họ**
   nếu cần, chấm **điểm năng lực (1–5)**, ghi **đánh giá định kỳ**.
+- Một số đầu việc của chính vị trí quản lý (VD "Kiểm tra checklist của đội
+  bếp mỗi ca") có thể được Admin đánh dấu **"Tự động"** — việc đó sẽ tự hiện
+  ✓ hoàn thành khi toàn bộ nhân sự Tầng 1 cấp dưới đạt đúng 100%, không cần
+  quản lý tự tick, và cũng không tick tay được (đảm bảo trung thực).
 - **Bảng KPI tổng hợp**: chọn Tháng/Quý/Năm → xem KPI trung bình + % ngày đạt
   chuẩn (≥80) của từng người, kèm **biểu đồ cột xu hướng theo tháng** để thấy
   ai đang tiến bộ / đang đi xuống — dùng xét thưởng minh bạch. Có nút **Xuất CSV**.
 
-### Admin &amp; Quản Lý Vùng (quyền tối thượng)
+### Admin &amp; Quản Lý Vùng (quyền tối thượng — không tham gia checklist/KPI)
+- Admin/Quản Lý Vùng **chỉ giao việc**, không có vị trí vận hành, không tick
+  checklist, không xuất hiện trong bảng KPI hay Đội Nhóm — vì vai trò của họ
+  là quản lý hệ thống, không phải người trực tiếp làm SOP.
 - **Admin** là quyền cao nhất: thấy toàn bộ nhân sự mọi chi nhánh, thêm/sửa/xoá
-  bất kỳ ai (kể cả Admin khác), là người duy nhất **cấp quyền Admin hoặc Quản
-  Lý Vùng** cho người khác (tick vào ô tương ứng khi thêm/sửa nhân sự).
+  bất kỳ nhân viên thường nào, là người duy nhất **cấp quyền Admin hoặc Quản
+  Lý Vùng** cho người khác. **Không ai — kể cả Admin khác — sửa hay xoá được
+  1 tài khoản Admin**; mỗi Admin chỉ tự sửa thông tin/PIN của chính mình.
 - **Quản Lý Vùng** có quyền hạn *gần như tương đương* Admin — thấy toàn bộ
   nhân sự mọi chi nhánh, thêm/sửa/xoá nhân viên thường, sửa checklist — nhưng
-  **không thể sửa hoặc xoá tài khoản Admin**, và **không thể tự cấp quyền
-  Admin/Quản Lý Vùng** cho ai (chỉ Admin gốc làm được việc này).
-- Cả hai đều thấy thêm cột **"Đề xuất thưởng"** ngay trong bảng **Đội Nhóm Của
-  Tôi** (Xuất sắc/Tốt/Khá/Yếu, kèm lý do khi rê chuột) — không cần bấm vào
-  từng người mới thấy, tiện xét duyệt thưởng nhanh cho cả đội.
-- Trang **"Quản lý Checklist"**: chọn 1 vị trí bên trái → sửa nội dung công
-  việc, đổi trọng số (Trọng yếu/Quan trọng/Thường quy), thêm hoặc xoá đầu việc
-  cho từng giai đoạn (Mở ca/Giao ca/Đóng ca) → bấm **Lưu thay đổi** → áp dụng
-  ngay lập tức cho mọi nhân sự đang giữ vị trí đó, không cần sửa code hay
-  deploy lại. Đây là cách chỉnh checklist cho phù hợp cách vận hành riêng của
-  từng cửa hàng.
+  **không được đụng vào bất kỳ tài khoản Admin nào** (kể cả xem/sửa), và
+  **không được tự cấp quyền Admin/Quản Lý Vùng** cho ai.
+- Trong trang **Đội Nhóm Của Tôi** (nay gọi là "Toàn Bộ Nhân Sự" với 2 vai trò
+  này), có thêm cột **"Đề xuất thưởng"** (Xuất sắc/Tốt/Khá/Yếu, kèm lý do khi
+  rê chuột) — không cần bấm vào từng người mới thấy.
+- Trang **"Quản lý Checklist"**: chọn 1 vị trí bên trái → sửa tên vị trí, đổi
+  tầng, đổi "báo cáo lên ai", bật/tắt "vị trí quản lý", sửa nội dung công việc
+  / trọng số / cờ "Tự động" cho từng đầu việc → **Lưu thay đổi** → áp dụng
+  ngay cho mọi nhân sự đang giữ vị trí đó. Nút **"+ Thêm vị trí mới"** để tạo
+  hẳn 1 chức danh mới (VD "NV Rửa Bát"); mỗi vị trí có nút **"Xoá vị trí"**
+  riêng — bị chặn nếu còn người đang giữ hoặc còn vị trí khác báo cáo lên nó.
+- Khi thêm/sửa nhân sự Tầng 1, có thể chọn **"Báo cáo trực tiếp cho ai"**
+  (tuỳ chọn) — dùng khi có nhiều người cùng giữ 1 chức quản lý (VD 2 Quản Lý
+  Ca khác ca) và cần tách rõ ai quản ai, thay vì chỉ suy theo vị trí+chi nhánh.
 
 ---
 
@@ -276,6 +303,13 @@ chạy trên máy có cài PostgreSQL client (hoặc cho Claude Code chạy hộ
   **Sửa** → nhập PIN mới ở ô "Mã PIN" để đặt lại hộ.
 - **Phân quyền theo chi nhánh** dựa trên trường "Chi nhánh" nhập lúc tạo
   nhân sự — luôn gõ đúng, nhất quán ("Khạp Khun" / "Pinoong").
+- **Checklist dùng chung theo vị trí + chi nhánh**: nếu vô tình xếp 2 người
+  khác vai trò thực tế vào chung 1 "vị trí" hệ thống, họ sẽ bị gộp chung
+  checklist — hãy tách thành 2 vị trí riêng (VD "NV Xôi" và "NV Xôi (Ca 2)")
+  nếu công việc thực tế của họ khác nhau, dùng trang Quản lý Checklist để tạo.
+- **"Tự động theo đội nhóm"** xét đúng 100% mới đánh dấu hoàn thành (không có
+  mức "gần đạt") — nếu 1 nhân sự Tầng 1 quên tick dù đã làm xong, việc tự động
+  của quản lý cũng sẽ hiện chưa xong theo đúng logic minh bạch.
 - **"Đề xuất thưởng" chỉ mang tính gợi ý** dựa trên mức KPI, không tự động
   chi tiền hay tính ra số tiền cụ thể — Admin/Quản Lý Vùng vẫn là người quyết
   định cuối cùng.
