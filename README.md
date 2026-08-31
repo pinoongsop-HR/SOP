@@ -5,8 +5,10 @@ Phần mềm nội bộ: **Checklist SOP theo 3 giai đoạn (Mở ca – Giao c
 phân quyền theo sơ đồ tổ chức, bảng KPI tháng/quý/năm kèm biểu đồ tiến bộ.
 
 **Bản này có gì mới so với bản trước:**
-- **Admin bị khoá tuyệt đối**: không ai — kể cả Admin khác — sửa/xoá được 1 tài
-  khoản Admin, chỉ chính chủ tự sửa thông tin/PIN của mình.
+- **Bảo vệ tài khoản Admin**: Quản Lý Vùng không đụng được vào bất kỳ Admin nào
+  (xem/sửa/xoá). Các Admin quản lý được lẫn nhau (kể cả Admin do người khác
+  tạo ra) — riêng **không ai xoá/hạ quyền được Admin cuối cùng** của hệ thống,
+  tránh trường hợp không còn ai có quyền tối thượng.
 - **Admin &amp; Quản Lý Vùng không còn gắn vị trí, không xuất hiện trong checklist
   hay bảng KPI** — vì họ chỉ giao việc, không trực tiếp làm SOP.
 - **Checklist dùng chung theo vị trí**: nếu 2+ người cùng giữ 1 vị trí (VD 2
@@ -241,8 +243,10 @@ free tier), mỗi lần deploy lại/redeploy không mất dữ liệu vì đã 
   là quản lý hệ thống, không phải người trực tiếp làm SOP.
 - **Admin** là quyền cao nhất: thấy toàn bộ nhân sự mọi chi nhánh, thêm/sửa/xoá
   bất kỳ nhân viên thường nào, là người duy nhất **cấp quyền Admin hoặc Quản
-  Lý Vùng** cho người khác. **Không ai — kể cả Admin khác — sửa hay xoá được
-  1 tài khoản Admin**; mỗi Admin chỉ tự sửa thông tin/PIN của chính mình.
+  Lý Vùng** cho người khác. Các Admin **quản lý được lẫn nhau** (sửa/xoá Admin
+  khác, kể cả Admin mình không tạo ra) — riêng **không ai xoá hay hạ quyền
+  được Admin cuối cùng** của hệ thống, để luôn còn ít nhất 1 người có quyền
+  tối thượng.
 - **Quản Lý Vùng** có quyền hạn *gần như tương đương* Admin — thấy toàn bộ
   nhân sự mọi chi nhánh, thêm/sửa/xoá nhân viên thường, sửa checklist — nhưng
   **không được đụng vào bất kỳ tài khoản Admin nào** (kể cả xem/sửa), và
